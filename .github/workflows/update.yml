@@ -41,17 +41,18 @@ jobs:
           pip install --quiet anthropic
           python fetch_fb.py
 
-      - name: 把新事件存回 repo
+      - run: python build.py
+
+      - name: 把新事件和盤中資料存回 repo
         if: github.event_name != 'push'
         run: |
-          git add events.csv seen_posts.json pending.csv 2>/dev/null || true
-          if git diff --cached --quiet; then echo "沒有新事件"; exit 0; fi
+          git add events.csv seen_posts.json data/ 2>/dev/null || true
+          git add pending.csv 2>/dev/null || true
+          if git diff --cached --quiet; then echo "沒有新資料"; exit 0; fi
           git config user.name "8zz-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "新增 8zz 貼文事件"
+          git commit -m "更新 8zz 貼文事件與盤中資料"
           git push
-
-      - run: python build.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

@@ -152,6 +152,27 @@ def fetch_intraday(ticker, start):
     }
 
 
+def merge_cache(ticker, fresh):
+    """Yahoo 的 5 分 K 只留 60 天，所以把抓過的分 K 存在 data/ 裡累積，同一時段以 5 分 K 為準。"""
+    path = ROOT / "data" / f"intraday_{ticker.replace('^', '_')}.json"
+    bars = {}
+    if path.exists():
+        old = json.loads(path.read_text(encoding="utf-8"))
+        bars = {t: (m, o, c) for t, m, o, c in zip(old["t"], old["m"], old["o"], old["c"])}
+    if fresh:
+        for t, m, o, c in zip(fresh["t"], fresh["m"], fresh["o"], fresh["c"]):
+            bars[t] = (m, o, c)
+    if not bars:
+        return None
+    fine = sorted(t for t, v in bars.items() if v[0] == 5)
+    first5 = fine[0] if fine else float("inf")
+    keep = sorted(t for t, v in bars.items() if v[0] == 5 or t < first5)
+    out = {"t": keep, "m": [bars[t][0] for t in keep], "o": [bars[t][1] for t in keep], "c": [bars[t][2] for t in keep]}
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+    return out
+
+
 def fill_from_intraday(daily, intra):
     """日 K 還缺的交易日，用當天最後一根分 K 的收盤價補。"""
     last = {}
@@ -184,7 +205,7 @@ def main():
             print(f"⚠ {t}: 抓不到報價，這檔的事件會顯示為待進場（{exc}）")
             continue
         print(f"{t}: {len(prices[t]['dates'])} 根 K 棒，最新 {prices[t]['last_time']}")
-        intra = fetch_intraday(t, start)
+        intra = merge_cache(t, fetch_intraday(t, start))
         if intra:
             intraday[t] = intra
             print(f"  盤中分 K {len(intra['t'])} 根")
