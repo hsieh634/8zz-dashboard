@@ -1,0 +1,430 @@
+<title>8zz 反指標看板</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: one column trading terminal. Header → mode switch → KPI strip → equity chart → event ledger.
+   台股慣例：紅色＝賺、綠色＝賠。 */
+:root {
+  --bg: #0c0f13; --panel: #12171d; --panel-2: #181f27; --line: #242d38;
+  --fg: #e7ecf2; --muted: #8a96a6; --faint: #5b6675;
+  --accent: #f0b54a; --accent-ink: #1a1305;
+  --line-a: #6f93c0; --bench: #7d8794;
+  --up: #ff5c63; --down: #2fc27a; --warn: #f0b54a;
+  --font-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #f4f6f8; --panel: #ffffff; --panel-2: #eef1f5; --line: #d9dfe6;
+  --fg: #141a22; --muted: #5a6574; --faint: #8b95a3;
+  --accent: #b9771a; --accent-ink: #ffffff;
+  --line-a: #3f6aa3; --bench: #8a939e;
+  --up: #d42f3a; --down: #138a4c; --warn: #a96b10; color-scheme: light; } }
+:root[data-theme="light"] {
+  --bg: #f4f6f8; --panel: #ffffff; --panel-2: #eef1f5; --line: #d9dfe6;
+  --fg: #141a22; --muted: #5a6574; --faint: #8b95a3;
+  --accent: #b9771a; --accent-ink: #ffffff;
+  --line-a: #3f6aa3; --bench: #8a939e;
+  --up: #d42f3a; --down: #138a4c; --warn: #a96b10; color-scheme: light; }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 22px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.up { color: var(--up); } .down { color: var(--down); } .muted { color: var(--muted); }
+
+header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+header h1 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: .01em; text-wrap: balance; }
+header h1 .tag { display: inline-block; margin-left: 10px; padding: 2px 8px; border: 1px solid var(--accent); color: var(--accent); border-radius: 4px; font-size: 12px; font-weight: 700; vertical-align: 4px; letter-spacing: .08em; }
+header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.stamp { color: var(--muted); font-size: 12px; text-align: right; display: flex; flex-direction: column; gap: 2px; align-self: flex-end; }
+.live { display: inline-flex; align-items: center; gap: 6px; }
+.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 25%, transparent); }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px; gap: 3px; }
+.seg button { font: inherit; font-weight: 700; font-size: 13px; color: var(--muted); background: transparent; border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ctl { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+select, input[type=search] { font: inherit; font-size: 13px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+input[type=search] { min-width: 0; width: 200px; }
+.now { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.now .lead { display: flex; flex-direction: column; gap: 2px; }
+.now .lead .k { color: var(--muted); font-size: 12px; letter-spacing: .04em; }
+.now .lead .v { font-size: 28px; font-weight: 900; line-height: 1.2; }
+.now .why { color: var(--muted); font-size: 13px; flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.now .why b { color: var(--fg); font-weight: 500; }
+.note { margin: 0; color: var(--muted); font-size: 13px; padding-left: 12px; border-left: 2px solid var(--line); max-width: 75ch; }
+.note b { color: var(--fg); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.kpi { background: var(--panel); padding: 16px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
+.kpi .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 600; line-height: 1.15; }
+.kpi .k { color: var(--muted); font-size: 12px; letter-spacing: .04em; }
+.kpi.hero .v { font-size: 32px; }
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.card h2 span { color: var(--muted); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 6px; }
+.chartbox { position: relative; height: 340px; }
+
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.filters .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 1040px; font-size: 13px; }
+th { position: sticky; top: 0; background: var(--panel-2); color: var(--muted); font-weight: 500; text-align: left; padding: 10px 12px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tr.ghost td { color: var(--faint); }
+td.post { max-width: 340px; }
+td.post .s { font-weight: 700; }
+td.post .t { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+td.post a { color: var(--accent); text-decoration: none; font-size: 12px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 700; white-space: nowrap; border: 1px solid currentColor; }
+.pill.solid-up { background: var(--up); border-color: var(--up); color: var(--bg); }
+.pill.solid-down { background: var(--down); border-color: var(--down); color: var(--bg); }
+.pill.open { color: var(--warn); }
+.pill.wait { color: var(--muted); }
+.stars { color: var(--accent); letter-spacing: 1px; }
+.flip { color: var(--accent); font-weight: 700; }
+.empty { padding: 32px; text-align: center; color: var(--muted); }
+details { color: var(--muted); font-size: 13px; }
+details summary { cursor: pointer; color: var(--fg); font-weight: 500; }
+details ul { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; max-width: 80ch; }
+@media (max-width: 640px) {
+  header h1 { font-size: 21px; } .stamp { text-align: left; align-self: auto; }
+  .chartbox { height: 260px; } .kpi .v { font-size: 22px; } .kpi.hero .v { font-size: 26px; }
+  .filters .count { margin-left: 0; width: 100%; } input[type=search] { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>8zz 反指標看板<span class="tag">CONTRARIAN</span></h1>
+      <p>她喊多我們做空，她喊空我們做多。以各事件指定標的的實際收盤價回測，空白標的預設 0050.TW。</p>
+    </div>
+    <div class="stamp" id="stamp"></div>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="出場模式">
+      <button type="button" id="modeB" data-mode="B">Mode B｜翻轉訊號出場</button>
+      <button type="button" id="modeA" data-mode="A">Mode A｜固定 <span class="hb"></span> 根 K 棒</button>
+    </div>
+    <label class="ctl" for="minStr">計入回測的最低強度
+      <select id="minStr"><option value="1">★ 以上（全部）</option><option value="2">★★ 以上</option><option value="3">★★★ 才算</option></select>
+    </label>
+  </div>
+  <section class="now" id="now" aria-label="目前反指標部位"></section>
+  <p class="note" id="modeNote"></p>
+
+  <section class="kpis" id="kpis" aria-label="戰績摘要"></section>
+
+  <section class="card">
+    <h2>資產曲線 <span>起始 100｜反指標 vs 買入持有 <span class="benchName"></span></span></h2>
+    <div class="legend" id="legend"></div>
+    <div class="chartbox"><canvas id="chart" aria-label="資產曲線圖"></canvas></div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:12px;min-width:0">
+    <div class="filters">
+      <label class="ctl" for="fDir">她的看法 <select id="fDir"><option value="all">全部</option><option value="bull">偏多 ▲</option><option value="bear">偏空 ▼</option></select></label>
+      <label class="ctl" for="fStr">強度 <select id="fStr"><option value="all">全部</option><option value="3">★★★</option><option value="2">★★</option><option value="1">★</option></select></label>
+      <label class="ctl" for="fRes">結果 <select id="fRes"><option value="all">全部</option><option value="win">獲利</option><option value="loss">虧損</option><option value="open">進行中</option><option value="none">無交易</option></select></label>
+      <label class="ctl" for="fScope">事件範圍 <select id="fScope"><option value="all">所有事件（含同向）</option><option value="flip">只看翻轉訊號</option></select></label>
+      <input type="search" id="q" placeholder="搜尋貼文、標的…" aria-label="關鍵字搜尋">
+      <span class="count num" id="count"></span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>貼文時間</th><th>她的看法</th><th>強度</th><th>標的</th><th>貼文</th><th>翻轉</th><th>我方部位</th><th>進場</th><th>出場</th><th class="num">報酬</th><th>結果</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <details>
+    <summary>計算方式</summary>
+    <ul>
+      <li>反指標：8zz 偏多 → 我方做空；8zz 偏空 → 我方做多。</li>
+      <li>進場價：貼文後第一個收盤價。台股標的在 13:30 收盤前發文，用當日收盤；收盤後發文，用下一個交易日收盤。</li>
+      <li>翻轉：同一標的方向與前一筆不同的事件。同向事件不開新倉（Mode B 續抱）。</li>
+      <li>Mode B：翻轉訊號進場，持有到同一標的出現下一次反向訊號，在該訊號的進場收盤價出場。</li>
+      <li>Mode A：每一筆事件都進場，固定持有 <span class="hb"></span> 根 K 棒後以收盤價出場。</li>
+      <li>進出場落在同一根 K 棒的交易（例如半夜翻轉、隔天早上又翻轉）報酬為 0，標為「同日翻轉」，不計勝負。</li>
+      <li>資產曲線：每天把資金平均分給當天持有中的部位，按收盤價逐日計算損益，沒有部位時持有現金。不計交易成本。</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+const D = /*__DATA__*/null;
+const $ = (s) => document.querySelector(s);
+const HB = D.hold_bars;
+const TW_RE = /\.(TW|TWO)$|^\^TWII$/;
+const state = { mode: "B", minStr: 1 };
+try { const s = JSON.parse(localStorage.getItem("8zz-ui") || "{}"); if (s.mode) state.mode = s.mode; if (s.minStr) state.minStr = s.minStr; } catch (e) {}
+const save = () => { try { localStorage.setItem("8zz-ui", JSON.stringify(state)); } catch (e) {} };
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ts = (d) => Date.parse(d + "T00:00:00+08:00");
+const pct = (r, d = 2) => (r > 0 ? "+" : "") + (r * 100).toFixed(d) + "%";
+const sgn = (r) => (r > 0 ? "up" : r < 0 ? "down" : "");
+const stars = (n) => "★".repeat(n) + '<span class="muted">' + "☆".repeat(3 - n) + "</span>";
+
+function entryIdx(ev) {
+  const p = D.prices[ev.ticker];
+  if (!p) return -1;
+  const d = ev.time.slice(0, 10), hm = ev.time.slice(11, 16), tw = TW_RE.test(ev.ticker);
+  for (let i = 0; i < p.dates.length; i++) {
+    const x = p.dates[i];
+    if (x > d || (x === d && tw && hm < "13:30")) return i;
+  }
+  return -1;
+}
+
+function finish(t) {
+  const p = D.prices[t.ticker];
+  if (t.ei < 0) { t.status = "pending"; return t; }
+  t.entryDate = p.dates[t.ei]; t.entryPx = p.close[t.ei];
+  const last = p.dates.length - 1;
+  if (t.xi != null && t.xi === t.ei) {
+    t.exitDate = p.dates[t.xi]; t.exitPx = t.entryPx; t.status = "void";
+  } else if (t.xi != null && t.xi >= 0) {
+    t.exitDate = p.dates[t.xi]; t.exitPx = p.close[t.xi]; t.status = "closed";
+  } else {
+    t.exitPx = p.close[last]; t.markDate = p.dates[last]; t.status = "open";
+  }
+  t.ret = t.side * (t.exitPx / t.entryPx - 1);
+  return t;
+}
+
+function compute(minStr) {
+  const evs = D.events.map((e, i) => ({ ...e, id: i, side: e.dir === "bull" ? -1 : 1, ei: entryIdx(e), used: e.strength >= minStr }));
+  const pos = {}, A = [], B = [];
+  for (const e of evs) {
+    if (!e.used) continue;
+    const cur = pos[e.ticker];
+    e.flip = !cur || cur.side !== e.side;
+    if (e.flip) {
+      if (cur) cur.xi = e.ei < 0 ? null : e.ei;
+      const t = { ev: e, ticker: e.ticker, side: e.side, ei: e.ei };
+      pos[e.ticker] = t; B.push(t); e.tB = t;
+    }
+    const n = e.ei >= 0 ? D.prices[e.ticker].dates.length : 0;
+    const ta = { ev: e, ticker: e.ticker, side: e.side, ei: e.ei, xi: e.ei >= 0 && e.ei + HB < n ? e.ei + HB : null };
+    A.push(ta); e.tA = ta;
+  }
+  A.forEach(finish); B.forEach(finish);
+  return { evs, A, B };
+}
+
+function equity(trades) {
+  // 每日資金平均分配給當天持有中的部位，逐日按收盤價計算損益；沒有部位時持有現金。
+  const live = trades.filter((t) => t.status === "closed" || t.status === "open");
+  if (!live.length) return [];
+  const idx = {};
+  for (const [tk, p] of Object.entries(D.prices)) { idx[tk] = {}; p.dates.forEach((d, i) => (idx[tk][d] = i)); }
+  const allDates = [...new Set(Object.values(D.prices).flatMap((p) => p.dates))].sort();
+  const start = live.map((t) => t.entryDate).sort()[0];
+  let eq = 100; const pts = [{ x: ts(start), y: 100 }];
+  for (const d of allDates) {
+    if (d <= start) continue;
+    let sum = 0, n = 0;
+    for (const t of live) {
+      const p = D.prices[t.ticker], i = idx[t.ticker][d];
+      if (i == null) continue;
+      const end = t.status === "closed" ? t.xi : p.dates.length - 1;
+      if (i > t.ei && i <= end) { sum += t.side * (p.close[i] / p.close[i - 1] - 1); n++; }
+    }
+    if (n) eq *= 1 + sum / n;
+    pts.push({ x: ts(d), y: eq });
+  }
+  return pts;
+}
+
+function benchmark(fromTs) {
+  const p = D.prices[D.benchmark]; let base = null; const pts = [];
+  p.dates.forEach((d, i) => { const x = ts(d); if (x < fromTs) return; if (base == null) base = p.close[i]; pts.push({ x, y: (p.close[i] / base) * 100 }); });
+  return pts;
+}
+
+let R, chart;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function renderStamp() {
+  const b = D.prices[D.benchmark], lastEv = D.events[D.events.length - 1];
+  $("#stamp").innerHTML =
+    `<span class="live">資料產生 <span class="num">${esc(D.generated_at)}</span></span>` +
+    `<span>最新事件 <span class="num">${esc(lastEv.time)}</span></span>` +
+    `<span>${esc(D.benchmark)} <span class="num">${b.last_price != null ? b.last_price.toFixed(2) : "—"}</span>（<span class="num">${esc(b.last_time)}</span>）</span>`;
+  document.querySelectorAll(".hb").forEach((el) => (el.textContent = HB));
+  document.querySelectorAll(".benchName").forEach((el) => (el.textContent = D.benchmark));
+}
+
+function renderKpis(trades, eqPts, benchPts) {
+  const closed = trades.filter((t) => t.status === "closed");
+  const wins = closed.filter((t) => t.ret > 0).length, losses = closed.length - wins;
+  const open = trades.filter((t) => t.status === "open" || t.status === "pending").length;
+  const avg = closed.length ? closed.reduce((s, t) => s + t.ret, 0) / closed.length : 0;
+  const cum = eqPts.length ? eqPts[eqPts.length - 1].y / 100 - 1 : 0;
+  const bench = benchPts.length ? benchPts[benchPts.length - 1].y / 100 - 1 : 0;
+  const wr = closed.length ? wins / closed.length : 0;
+  const used = R.evs.filter((e) => e.used).length;
+  const k = [
+    ["hero", closed.length ? (wr * 100).toFixed(1) + "%" : "—", "勝率（已出場）", wr >= 0.5 ? "up" : "down"],
+    ["", wins, "勝", "up"], ["", losses, "敗", "down"], ["", open, "進行中", "muted"],
+    ["", closed.length ? pct(avg) : "—", "平均每筆報酬", sgn(avg)],
+    ["", pct(cum, 1), "累積報酬（含未實現）", sgn(cum)],
+    ["", pct(bench, 1), `同期買入持有 ${D.benchmark}`, sgn(bench)],
+    ["", used + (used !== R.evs.length ? `<span class="muted" style="font-size:.6em">/${R.evs.length}</span>` : ""), "計入事件數", ""],
+  ];
+  $("#kpis").innerHTML = k.map(([c, v, l, col]) => `<div class="kpi ${c}"><div class="v ${col}">${v}</div><div class="k">${l}</div></div>`).join("");
+}
+
+function renderChart() {
+  const eqB = equity(R.B), eqA = equity(R.A);
+  const start = Math.min(eqB[0]?.x ?? Infinity, eqA[0]?.x ?? Infinity);
+  const bench = isFinite(start) ? benchmark(start) : [];
+  renderKpis(state.mode === "B" ? R.B : R.A, state.mode === "B" ? eqB : eqA, bench);
+
+  const C = { b: css("--accent"), a: css("--line-a"), bench: css("--bench"), grid: css("--line"), tick: css("--muted"), panel: css("--panel-2"), fg: css("--fg") };
+  const strong = (m) => state.mode === m;
+  const ds = [
+    { label: "Mode B（翻轉出場）", data: eqB, borderColor: C.b, borderWidth: strong("B") ? 2.5 : 1.25, pointRadius: 0, order: strong("B") ? 0 : 1 },
+    { label: `Mode A（固定 ${HB} 棒）`, data: eqA, borderColor: C.a, borderWidth: strong("A") ? 2.5 : 1.25, pointRadius: 0, order: strong("A") ? 0 : 1 },
+    { label: `${D.benchmark} 買入持有`, data: bench, borderColor: C.bench, borderWidth: 1.25, borderDash: [5, 4], pointRadius: 0, order: 2 },
+  ];
+  ds.forEach((d) => { d.pointBackgroundColor = d.borderColor; d.pointBorderWidth = 0; d.fill = false; });
+  $("#legend").innerHTML = ds.map((d) => `<span><i style="border-color:${d.borderColor};${d.borderDash ? "border-top-style:dashed" : ""}"></i>${esc(d.label)}</span>`).join("");
+
+  const months = [];
+  if (isFinite(start)) { const s = new Date(start), e = Date.now(); for (let d = new Date(s.getFullYear(), s.getMonth() + 1, 1); d <= e; d.setMonth(d.getMonth() + 1)) months.push(d.getTime()); }
+  let tickLabel = (v) => { const d = new Date(v); return d.getMonth() === 0 ? `${d.getFullYear()}/01` : `${d.getMonth() + 1}月`; };
+  if (months.length < 3 && isFinite(start)) {
+    months.length = 0;
+    D.prices[D.benchmark].dates.forEach((d) => { const x = ts(d); if (x >= start) months.push(x); });
+    tickLabel = (v) => { const d = new Date(v + 8 * 3600e3); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; };
+  }
+  const fmtD = (v) => { const d = new Date(v); return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`; };
+
+  if (chart) chart.destroy();
+  chart = new Chart($("#chart"), {
+    type: "line",
+    data: { datasets: ds },
+    options: {
+      parsing: false, animation: false, maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false, axis: "x" },
+      plugins: { legend: { display: false }, tooltip: {
+        backgroundColor: C.panel, titleColor: C.fg, bodyColor: C.fg, borderColor: C.grid, borderWidth: 1,
+        titleFont: { family: "JetBrains Mono" }, bodyFont: { family: "JetBrains Mono" },
+        callbacks: { title: (it) => fmtD(it[0].parsed.x), label: (c) => ` ${c.dataset.label}: ${c.parsed.y.toFixed(1)}` } } },
+      scales: {
+        x: { type: "linear", min: isFinite(start) ? start : undefined, max: Date.now(), grid: { color: C.grid }, border: { color: C.grid },
+          afterBuildTicks: (sc) => { sc.ticks = months.map((v) => ({ value: v })); },
+          ticks: { color: C.tick, autoSkip: true, maxRotation: 0, font: { family: "JetBrains Mono", size: 11 },
+            callback: (v) => tickLabel(v) } },
+        y: { grid: { color: C.grid }, border: { color: C.grid }, ticks: { color: C.tick, font: { family: "JetBrains Mono", size: 11 } } },
+      },
+    },
+  });
+}
+
+function resultOf(t) {
+  if (!t) return "none";
+  if (t.status === "pending" || t.status === "open") return "open";
+  if (t.status === "void") return "none";
+  return t.ret > 0 ? "win" : "loss";
+}
+
+function renderTable() {
+  const f = { dir: $("#fDir").value, str: $("#fStr").value, res: $("#fRes").value, scope: $("#fScope").value, q: $("#q").value.trim().toLowerCase() };
+  const key = state.mode === "B" ? "tB" : "tA";
+  const list = R.evs.slice().reverse().filter((e) => {
+    if (f.dir !== "all" && e.dir !== f.dir) return false;
+    if (f.str !== "all" && String(e.strength) !== f.str) return false;
+    if (f.scope === "flip" && !e.flip) return false;
+    if (f.res !== "all" && resultOf(e.used ? e[key] : null) !== f.res) return false;
+    if (f.q && !(e.summary + " " + e.text + " " + e.ticker + " " + e.time).toLowerCase().includes(f.q)) return false;
+    return true;
+  });
+  $("#count").textContent = `顯示 ${list.length} / ${R.evs.length} 筆`;
+  if (!list.length) { $("#rows").innerHTML = `<tr><td colspan="12" class="empty">沒有符合條件的事件，試著放寬篩選。</td></tr>`; return; }
+  const total = R.evs.length;
+  $("#rows").innerHTML = list.map((e) => {
+    const t = e.used ? e[key] : null;
+    const dir = e.dir === "bull" ? `<span class="up">偏多 ▲</span>` : `<span class="down">偏空 ▼</span>`;
+    const flip = !e.used ? `<span class="muted">未計入</span>` : e.flip ? `<span class="flip">⇄ 翻轉</span>` : `<span class="muted">同向</span>`;
+    let side = "—", ent = "—", ex = "—", ret = "—", res = state.mode === "B" && e.used && !e.flip ? `<span class="muted">續抱</span>` : "—";
+    if (t) {
+      side = t.side > 0 ? `<span class="up">做多</span>` : `<span class="down">做空</span>`;
+      if (t.status === "pending") { ent = `<span class="muted">待收盤</span>`; res = `<span class="pill wait">待進場</span>`; }
+      else {
+        ent = `<span class="num">${t.entryDate}</span><br><span class="num muted">${t.entryPx.toFixed(2)}</span>`;
+        ex = t.status === "closed" || t.status === "void" ? `<span class="num">${t.exitDate}</span><br><span class="num muted">${t.exitPx.toFixed(2)}</span>` : `<span class="muted">持有中</span><br><span class="num muted">${t.exitPx.toFixed(2)}</span>`;
+        ret = `<span class="num ${sgn(t.ret)}">${pct(t.ret)}</span>`;
+        res = t.status === "void" ? `<span class="pill wait" title="進出場在同一根 K 棒，不計勝負">同日翻轉</span>` : t.status === "open" ? `<span class="pill open">進行中</span>` : t.ret > 0 ? `<span class="pill solid-up">勝</span>` : `<span class="pill solid-down">敗</span>`;
+      }
+    }
+    const link = e.url && /^https?:\/\//.test(e.url) ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener">原文 ↗</a>` : "";
+    return `<tr class="${e.used ? "" : "ghost"}"><td class="num muted">${total - e.id}</td><td class="num" style="white-space:nowrap">${esc(e.time)}</td><td style="white-space:nowrap">${dir}</td><td class="stars">${stars(e.strength)}</td><td class="num">${esc(e.ticker)}</td>` +
+      `<td class="post"><div class="s">${esc(e.summary || "—")}</div><div class="t">${esc(e.text)}${link}</div></td><td style="white-space:nowrap">${flip}</td><td>${side}</td><td style="white-space:nowrap">${ent}</td><td style="white-space:nowrap">${ex}</td><td>${ret}</td><td>${res}</td></tr>`;
+  }).join("");
+}
+
+function renderNow() {
+  const trades = state.mode === "B" ? R.B : R.A;
+  const open = trades.filter((t) => t.status === "open" || t.status === "pending");
+  const lastEv = R.evs.filter((e) => e.used).slice(-1)[0];
+  const sideTxt = (s) => (s > 0 ? `<span class="up">做多</span>` : `<span class="down">做空</span>`);
+  let lead, detail = [];
+  if (state.mode === "B") {
+    const byT = {};
+    open.forEach((t) => (byT[t.ticker] = t));
+    const list = Object.values(byT);
+    const main = byT[D.benchmark] || list[0];
+    lead = main ? `${sideTxt(main.side)} <span class="num">${esc(main.ticker)}</span>` : `<span class="muted">空手</span>`;
+    list.forEach((t) => {
+      const since = t.status === "pending" ? "待今天收盤進場" : `${t.entryDate} 以 <span class="num">${t.entryPx.toFixed(2)}</span> 進場，目前 <span class="num ${sgn(t.ret)}">${pct(t.ret)}</span>`;
+      detail.push(`<span><b>${esc(t.ticker)} ${t.side > 0 ? "做多" : "做空"}</b>：她在 ${esc(t.ev.time)}「${esc(t.ev.summary)}」翻${t.ev.dir === "bull" ? "多" : "空"}，${since}</span>`);
+    });
+  } else {
+    const L = open.filter((t) => t.side > 0).length, S = open.length - L;
+    lead = L === S ? `<span class="muted">多空各半</span>` : L > S ? `<span class="up">偏多</span>` : `<span class="down">偏空</span>`;
+    detail.push(`<span>持有中 <b>${L}</b> 筆做多、<b>${S}</b> 筆做空（每篇貼文持有 ${HB} 根 K 棒）</span>`);
+  }
+  if (lastEv) detail.push(`<span>她最新一篇：${esc(lastEv.time)}「${esc(lastEv.summary)}」${lastEv.dir === "bull" ? '<span class="up">偏多</span>' : '<span class="down">偏空</span>'} → 反著做就是${lastEv.side > 0 ? '<span class="up">做多</span>' : '<span class="down">做空</span>'}</span>`);
+  $("#now").innerHTML = `<div class="lead"><span class="k">反指標現在（${state.mode === "B" ? "Mode B" : "Mode A"}）</span><span class="v">${lead}</span></div><div class="why">${detail.join("")}</div>`;
+}
+
+function render() {
+  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === state.mode)));
+  $("#minStr").value = String(state.minStr);
+  $("#modeNote").innerHTML = state.mode === "B"
+    ? `<b>Mode B（翻轉平倉）</b>：每次 8zz 方向翻轉就反向進場，持有到同一標的下一次反向訊號才出場。同向貼文不加碼。`
+    : `<b>Mode A（固定持有）</b>：每一篇貼文都反向進場，固定持有 ${HB} 根日 K 後以收盤價出場。`;
+  R = compute(state.minStr);
+  renderNow();
+  renderChart();
+  renderTable();
+}
+
+document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => { state.mode = b.dataset.mode; save(); render(); }));
+$("#minStr").addEventListener("change", (e) => { state.minStr = +e.target.value; save(); render(); });
+["#fDir", "#fStr", "#fRes", "#fScope"].forEach((s) => $(s).addEventListener("change", renderTable));
+$("#q").addEventListener("input", renderTable);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderChart);
+new MutationObserver(renderChart).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+renderStamp();
+if (window.Chart) render(); else window.addEventListener("load", render);
+</script>
