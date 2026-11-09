@@ -138,7 +138,7 @@ def append_rows(path, rows, fields):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", help="只抓這個時間之後的貼文（YYYY-MM-DD 或 Apify 相對時間如 '2 days'）")
-    ap.add_argument("--limit", type=int, default=20, help="最多抓幾篇（預設 20）")
+    ap.add_argument("--limit", type=int, default=10, help="最多抓幾篇（預設 10）")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -148,7 +148,15 @@ def main():
 
     state = load_state()
     seen = set(state["seen"])
-    since = args.since or (state["last_time"][:10] if state["last_time"] else "3 days")
+    if args.since:
+        since = args.since
+    elif state["last_time"]:
+        # Apify 每回傳一篇就收費，所以只抓上次最後一篇之後的時段（相對時間，多抓 1 小時當緩衝）
+        last = dt.datetime.strptime(state["last_time"], "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+        hours = max(2, int((dt.datetime.now(TZ) - last).total_seconds() // 3600) + 1)
+        since = f"{hours} hours"
+    else:
+        since = "3 days"
     posts = [p for p in fetch_posts(token, since, args.limit) if p["id"] not in seen]
     print(f"抓到 {len(posts)} 篇新貼文（since={since}）")
     if not posts:
