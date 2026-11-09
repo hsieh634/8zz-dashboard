@@ -30,22 +30,52 @@ PENDING = ROOT / "pending.csv"
 FIELDS = ["time", "direction", "strength", "ticker", "summary", "text", "url"]
 MODEL = "claude-opus-5-5"
 
-SYSTEM = """你在幫一個「反指標」看板判讀台灣網紅 8zz（巴逆逆）的臉書貼文。
-她常分享自己的台股／ETF 操作與心情，市場上把她的看法當成反指標。
+SYSTEM = """你在幫一個「反指標」看板判讀台灣網紅 8zz（巴逆逆，粉專 DieWithoutBang）的臉書貼文。
+她常分享自己的台股／ETF 操作與心情，市場把她當成反指標：看板會自動把她的看法反過來做，
+所以你只要判斷「她本人」怎麼看，不要自己反過來。
 
-請判斷這篇貼文透露的「她本人」對市場或特定標的的情緒：
-- direction：
-  - "多"：她看好、加碼、買進、抄底、滿倉、覺得會漲、賺錢很開心而想續抱。
-  - "空"：她看壞、停損、認賠、賣出、放空、買反向 ETF、哀嚎虧損想逃、覺得會跌。
-  - "無"：跟股市無關（生活、業配、閒聊），或看不出方向。
-  - 注意：買「反向」ETF（如 00632R）＝ 她看空；買正 2（如 00631L）＝ 她看多。
-- strength：1＝隨口一提，2＝明確表態，3＝重押、情緒強烈、梭哈或停損大賠。
-- ticker：她主要在講的標的，用 Yahoo Finance 代號（上市加 .TW，上櫃加 .TWO，
-  例如 2330.TW、0050.TW、00632R.TW；整體大盤用 ^TWII）。沒指定個股就填 "0050.TW"。
-  若她買的是反向／槓桿 ETF，ticker 填它追蹤的原型標的（大盤用 ^TWII），方向依她對大盤的看法。
-- summary：8 個字以內的情緒摘要，例如「停損哀嚎」「抄底加碼」。
-- reason：一句話說明你的判斷依據。
-只依貼文內容判斷，不要臆測貼文以外的資訊。"""
+## direction：她本人的看法
+- "多"：她覺得會漲、在買、在加碼、很有信心、或套牢了但還在期待上漲。
+- "空"：她覺得會跌、在賣、在停損減碼、買反向或 put、情緒崩潰想逃。
+- "無"：跟股市無關（業配、乾爹贊助、生活、手錶、醫美、周邊商品、閒聊），或真的看不出方向。
+
+她很少直接講「看多／看空」，常用反話、迷因和自創用語，請依她的習慣判讀：
+- 偏多的說法：穩了、今天穩了、明天不會跌、大V天龍、衝啊、要V了、反攻第一天、抄底、接回來、認錯買回、
+  一天100點台股5萬點、台股天下無敵、躲崩王、台股果然需要我坐鎮、我要成為買啥漲啥的福神、
+  絕不停損、不要再賣了、拯救XX（＝買進某檔）、加入XX（＝買進）、槓桿拉高、換正二、買正二、
+  好想買、等等就來接你、明天一定會漲、會再上去吧。
+- 偏空的說法：人道走廊（＝趕快逃）、逃命、跑路、停損、減碼、降槓桿、收回資金、先閃、反彈就賣、
+  又是反彈我不會被騙、一定是誘多、死貓跳、開高走低、要崩了、指數要墜機、世界末日、熊市、
+  買反一／加碼反一、買 put、sell call、開期貨帳戶（＝想放空）、我不行了、給我個痛快、
+  既然要爛就趕快到底、刪 app、不看盤了、存骨、去公園佔位置（＝虧到要睡公園）。
+- 套牢哀嚎要分清楚：哀嚎但還在期待漲回（「就騙騙我也可以」「明天會漲吧」）算「多」；
+  哀嚎到想認賠、想逃、絕望（「我不行了」「停損了啦」）算「空」。
+- 注意反話：「我不會再被騙了，這一定是誘多」是空；「不要慌！只是技術性調整」是多。
+- 買「反向」ETF（反1、00632R）＝ 空；買正2（00631L）、槓桿 ＝ 多。
+
+## strength
+1 ＝ 隨口一提、語氣模糊；2 ＝ 明確表態或有實際買賣；
+3 ＝ 重押、梭哈、大額停損、借錢加碼、買反向／put、情緒極強烈（「世界末日」「天下無敵」「台股要崩了」）。
+
+## ticker
+她主要在講的標的，用 Yahoo Finance 代號（上市加 .TW、上櫃加 .TWO，例如 2330.TW）。
+在講大盤、正二、反一、0050、或沒指定個股時一律填 "0050.TW"。
+
+## 例子（實際貼文 → 判讀）
+- 「今天穩了！大家一起跟我念！一天100點，台股5萬點！」→ 多 3
+- 「看什麼看 今天就是反彈啦～ 妥妥開高走低 今天繼續看有什麼可以賣的」→ 空 2
+- 「停損了啦 隨便了啦 股票就是騙人的爛東西 今天應該繼續探底」→ 空 3
+- 「孩子別怕！我來了！我陪著大家一起飛！」→ 多 3
+- 「今天是給你逃命的啊啊啊 我才不會進場啊啊啊！我加碼反一跟你說！」→ 空 3
+- 「沒⋯沒事的 台股沒事的！不要被美國人騙了！」→ 多 2
+- 「持續降低槓桿 剩下可能等12點之後再說了」→ 空 2
+- 「早上起來抄底❤️ 把創意買回來 買正二補回來」→ 多 3
+- 「其實好像⋯還好唉？難到是我錯了？」→ 無
+- 「首先感謝乾爹 XX 的贊助～（產品介紹）」→ 無
+
+## summary / reason
+summary：8 個字以內的摘要，盡量用她的說法，例如「人道走廊」「台股五萬點」。
+reason：一句話說明依據。只依貼文和附圖判斷，不要臆測貼文以外的資訊。"""
 
 SCHEMA = {
     "type": "object",
@@ -105,19 +135,46 @@ def fetch_posts(token, since, limit):
     return posts
 
 
+def load_images(urls, limit=2):
+    """把附圖下載下來轉成 base64（臉書圖片網址會過期，不讓 API 自己去抓）。"""
+    import base64
+    out = []
+    for u in urls[:limit]:
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data, ctype = r.read(), r.headers.get_content_type()
+            if ctype not in ("image/jpeg", "image/png", "image/gif", "image/webp") or len(data) > 4_000_000:
+                continue
+            out.append({"type": "image", "source": {"type": "base64", "media_type": ctype,
+                                                     "data": base64.b64encode(data).decode()}})
+        except Exception as exc:  # noqa: BLE001
+            print(f"    附圖下載失敗，只看文字：{exc}")
+    return out
+
+
+def is_sponsored(post):
+    """長篇業配文直接略過，不花 API 額度。短文裡提到乾爹的可能是在講股票，照樣判讀。"""
+    t = post["text"]
+    return len(t) > 250 and any(k in t for k in ("乾爹", "#AD", "#ad", "團購", "贊助"))
+
+
 def classify(client, post):
     content = f"發文時間：{post['time']}\n\n貼文內容：\n{post['text'] or '（無文字）'}"
     if post["ocr"]:
         content += f"\n\n圖片中的文字（OCR）：\n{post['ocr']}"
-    blocks = [{"type": "image", "source": {"type": "url", "url": u}} for u in post.get("images", [])]
-    blocks.append({"type": "text", "text": content + "\n\n（附圖若是對帳單或下單畫面，請一併判讀標的與方向）"})
+    blocks = load_images(post.get("images", []))
+    if blocks:
+        content += "\n\n（附圖若是對帳單、下單畫面或走勢圖，請一併判讀標的與方向）"
+    blocks.append({"type": "text", "text": content})
     resp = client.beta.messages.create(
         model=MODEL,
         max_tokens=4000,
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
-        output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=SYSTEM,
+        # 判讀是單純分類，用 low effort 省額度
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
+        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": blocks}],
     )
     if resp.stop_reason == "refusal":
@@ -171,6 +228,9 @@ def main():
     for p in posts:
         text = p["text"] or p["ocr"]
         short = text.replace("\n", " ")[:160]
+        if is_sponsored(p):
+            print(f"  {p['time']}  業配略過   {short[:40]}")
+            continue
         r = classify(client, p) if client else None
         if r is None:
             pending.append({"time": p["time"], "direction": "?", "strength": "", "ticker": "",

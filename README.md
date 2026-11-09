@@ -53,10 +53,13 @@ open dist/index.html
 2. 到 https://console.anthropic.com 申請 API key（Claude 判讀貼文用）。
 3. GitHub repo → Settings → Secrets and variables → Actions → New repository secret，
    新增 `APIFY_TOKEN` 和 `ANTHROPIC_API_KEY`。
-4. 排程：盤中每 30 分鐘、每天 08:10 / 18:10 / 22:10 各一次。抓到新貼文會自動 commit 進 `events.csv` 並重建看板。
+4. 排程：
+   - 抓新貼文：台北 08:10 到 00:10 每 2 小時一次（每天 9 次）。只抓上次之後的新貼文，沒有新貼文就不會呼叫 Claude API。
+   - 更新股價、重建看板：盤中每 30 分鐘，免費。
 
-費用估計：Apify 每次約 0.02 美元，一個月約 5–6 美元；Claude 判讀一篇不到 0.01 美元。
-想省錢就把 `.github/workflows/update.yml` 的 cron 改稀一點。
+費用估計：Apify 每月約 1–2 美元（每次啟動 0.001 美元，每篇新貼文約 0.007 美元）。
+Claude 只判讀新貼文，用低 effort，長篇業配文直接略過，一篇約 0.01–0.02 美元，一個月約 1–3 美元。
+判讀規則和她的常用說法（「穩了」「大V天龍」「人道走廊」…）寫在 `fetch_fb.py` 的 `SYSTEM`，判斷錯了可以直接改那裡。
 
 手動回補歷史貼文：
 
