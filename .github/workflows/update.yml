@@ -33,6 +33,7 @@ jobs:
 
       - name: 抓新貼文並用 Claude 判讀
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '10 0-16/2 * * *'
+        continue-on-error: true
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

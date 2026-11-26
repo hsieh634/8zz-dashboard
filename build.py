@@ -194,7 +194,7 @@ def main():
     if not events:
         sys.exit("events.csv 沒有任何事件")
     start = dt.date.fromisoformat(events[0]["time"][:10]) - dt.timedelta(days=10)
-    tickers = sorted({e["ticker"] for e in events} | {BENCHMARK})
+    tickers = sorted({e["ticker"] for e in events} | {BENCHMARK, "^TWII"})
     prices, intraday = {}, {}
     for t in tickers:
         try:
@@ -218,6 +218,8 @@ def main():
         "events": events,
         "prices": prices,
         "intraday": intraday,
+        "fetch_status": json.loads((ROOT / "data" / "fetch_status.json").read_text(encoding="utf-8"))
+        if (ROOT / "data" / "fetch_status.json").exists() else None,
     }
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     tpl = (ROOT / "template.html").read_text(encoding="utf-8")

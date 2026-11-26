@@ -42,6 +42,7 @@ header h1 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: .01em;
 header h1 .tag { display: inline-block; margin-left: 10px; padding: 2px 8px; border: 1px solid var(--accent); color: var(--accent); border-radius: 4px; font-size: 12px; font-weight: 700; vertical-align: 4px; letter-spacing: .08em; }
 header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .stamp { color: var(--muted); font-size: 12px; text-align: right; display: flex; flex-direction: column; gap: 2px; align-self: flex-end; }
+.warnline { color: var(--warn); font-weight: 700; }
 .live { display: inline-flex; align-items: center; gap: 6px; }
 .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--up); box-shadow: 0 0 0 3px color-mix(in srgb, var(--up) 25%, transparent); }
 
@@ -117,7 +118,7 @@ details ul { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction:
   <header>
     <div>
       <h1>8zz 反指標看板<span class="tag">CONTRARIAN</span></h1>
-      <p>她喊多我們做空，她喊空我們做多。以各事件指定標的的實際收盤價回測，空白標的預設 0050.TW。</p>
+      <p>她喊多我們做空，她喊空我們做多。講大盤的貼文可切換用 0050 或加權指數回測，講個股的用該檔股價。</p>
     </div>
     <div class="stamp" id="stamp"></div>
   </header>
@@ -126,6 +127,10 @@ details ul { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction:
     <div class="seg" role="group" aria-label="出場模式">
       <button type="button" id="modeB" data-mode="B">Mode B｜翻轉訊號出場</button>
       <button type="button" id="modeA" data-mode="A">Mode A｜固定 <span class="hb"></span> 根 K 棒</button>
+    </div>
+    <div class="seg" role="group" aria-label="回測標的">
+      <button type="button" data-mkt="0050.TW">0050</button>
+      <button type="button" data-mkt="^TWII">加權指數</button>
     </div>
     <label class="ctl" for="minStr">計入回測的最低強度
       <select id="minStr"><option value="1">★ 以上（全部）</option><option value="2">★★ 以上</option><option value="3">★★★ 才算</option></select>
@@ -184,8 +189,12 @@ const D = /*__DATA__*/null;
 const $ = (s) => document.querySelector(s);
 const HB = D.hold_bars;
 const TW_RE = /\.(TW|TWO)$|^\^TWII$/;
-const state = { mode: "B", minStr: 1 };
-try { const s = JSON.parse(localStorage.getItem("8zz-ui") || "{}"); if (s.mode) state.mode = s.mode; if (s.minStr) state.minStr = s.minStr; } catch (e) {}
+const state = { mode: "B", minStr: 1, market: "0050.TW" };
+try { const s = JSON.parse(localStorage.getItem("8zz-ui") || "{}"); if (s.mode) state.mode = s.mode; if (s.minStr) state.minStr = s.minStr; if (s.market && D.prices[s.market]) state.market = s.market; } catch (e) {}
+const NAMES = { "^TWII": "加權指數", "0050.TW": "0050" };
+const tkName = (t) => NAMES[t] || t.replace(/\.(TW|TWO)$/, "");
+// 講大盤的貼文（ticker 為 0050.TW）依切換改用 0050 或加權指數計算；講個股的維持原標的
+const mapT = (t) => (t === D.benchmark && D.prices[state.market] ? state.market : t);
 const save = () => { try { localStorage.setItem("8zz-ui", JSON.stringify(state)); } catch (e) {} };
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -244,7 +253,7 @@ function finish(t) {
 }
 
 function compute(minStr) {
-  const evs = D.events.map((e, i) => ({ ...e, id: i, side: e.dir === "bull" ? -1 : 1, en: entryPoint(e), used: e.strength >= minStr }));
+  const evs = D.events.map((e, i) => ({ ...e, ticker: mapT(e.ticker), id: i, side: e.dir === "bull" ? -1 : 1, en: entryPoint({ ...e, ticker: mapT(e.ticker) }), used: e.strength >= minStr }));
   const pos = {}, A = [], B = [];
   for (const e of evs) {
     e.after = reaction(e);
@@ -309,7 +318,7 @@ function equity(trades) {
 }
 
 function benchmark(fromTs) {
-  const p = D.prices[D.benchmark]; let base = null; const pts = [];
+  const p = D.prices[state.market]; let base = null; const pts = [];
   p.dates.forEach((d, i) => { const x = ts(d); if (x < fromTs) return; if (base == null) base = p.close[i]; pts.push({ x, y: (p.close[i] / base) * 100 }); });
   return pts;
 }
@@ -322,9 +331,12 @@ function renderStamp() {
   $("#stamp").innerHTML =
     `<span class="live">資料產生 <span class="num">${esc(D.generated_at)}</span></span>` +
     `<span>最新事件 <span class="num">${esc(lastEv.time)}</span></span>` +
-    `<span>${esc(D.benchmark)} <span class="num">${b.last_price != null ? b.last_price.toFixed(2) : "—"}</span>（<span class="num">${esc(b.last_time)}</span>）</span>`;
+    (D.fetch_status ? (D.fetch_status.ok
+      ? `<span>抓文正常（<span class="num">${esc(D.fetch_status.checked_at)}</span>）</span>`
+      : `<span class="warnline">⚠ 抓文暫停：${esc(D.fetch_status.message)}${D.fetch_status.last_ok_at ? `（最後成功 <span class="num">${esc(D.fetch_status.last_ok_at)}</span>）` : ""}</span>`) : "") +
+    ["0050.TW", "^TWII"].filter((t) => D.prices[t]).map((t) => { const q = D.prices[t]; return `<span>${tkName(t)} <span class="num">${q.last_price != null ? q.last_price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"}</span>（<span class="num">${esc(q.last_time)}</span>）</span>`; }).join("");
   document.querySelectorAll(".hb").forEach((el) => (el.textContent = HB));
-  document.querySelectorAll(".benchName").forEach((el) => (el.textContent = D.benchmark));
+
 }
 
 function renderKpis(trades, eqPts, benchPts) {
@@ -341,7 +353,7 @@ function renderKpis(trades, eqPts, benchPts) {
     ["", wins, "勝", "up"], ["", losses, "敗", "down"], ["", open, "進行中", "muted"],
     ["", closed.length ? pct(avg) : "—", "平均每筆報酬", sgn(avg)],
     ["", pct(cum, 1), "累積報酬（含未實現）", sgn(cum)],
-    ["", pct(bench, 1), `同期買入持有 ${D.benchmark}`, sgn(bench)],
+    ["", pct(bench, 1), `同期買入持有${tkName(state.market)}`, sgn(bench)],
     ["", used + (used !== R.evs.length ? `<span class="muted" style="font-size:.6em">/${R.evs.length}</span>` : ""), "計入事件數", ""],
   ];
   $("#kpis").innerHTML = k.map(([c, v, l, col]) => `<div class="kpi ${c}"><div class="v ${col}">${v}</div><div class="k">${l}</div></div>`).join("");
@@ -358,7 +370,7 @@ function renderChart() {
   const ds = [
     { label: "Mode B（翻轉出場）", data: eqB, borderColor: C.b, borderWidth: strong("B") ? 2.5 : 1.25, pointRadius: 0, order: strong("B") ? 0 : 1 },
     { label: `Mode A（固定 ${HB} 棒）`, data: eqA, borderColor: C.a, borderWidth: strong("A") ? 2.5 : 1.25, pointRadius: 0, order: strong("A") ? 0 : 1 },
-    { label: `${D.benchmark} 買入持有`, data: bench, borderColor: C.bench, borderWidth: 1.25, borderDash: [5, 4], pointRadius: 0, order: 2 },
+    { label: `${tkName(state.market)} 買入持有`, data: bench, borderColor: C.bench, borderWidth: 1.25, borderDash: [5, 4], pointRadius: 0, order: 2 },
   ];
   ds.forEach((d) => { d.pointBackgroundColor = d.borderColor; d.pointBorderWidth = 0; d.fill = false; });
   $("#legend").innerHTML = ds.map((d) => `<span><i style="border-color:${d.borderColor};${d.borderDash ? "border-top-style:dashed" : ""}"></i>${esc(d.label)}</span>`).join("");
@@ -368,7 +380,7 @@ function renderChart() {
   let tickLabel = (v) => { const d = new Date(v); return d.getMonth() === 0 ? `${d.getFullYear()}/01` : `${d.getMonth() + 1}月`; };
   if (months.length < 3 && isFinite(start)) {
     months.length = 0;
-    D.prices[D.benchmark].dates.forEach((d) => { const x = ts(d); if (x >= start) months.push(x); });
+    D.prices[state.market].dates.forEach((d) => { const x = ts(d); if (x >= start) months.push(x); });
     tickLabel = (v) => { const d = new Date(v + 8 * 3600e3); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; };
   }
   const fmtD = (v) => { const d = new Date(v); return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`; };
@@ -455,7 +467,7 @@ function renderTable() {
       }
     }
     const link = e.url && /^https?:\/\//.test(e.url) ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener">原文 ↗</a>` : "";
-    return `<tr class="${e.used ? "" : "ghost"}"><td class="num muted">${total - e.id}</td><td class="num" style="white-space:nowrap">${esc(e.time)}</td><td style="white-space:nowrap">${dir}</td><td class="stars">${stars(e.strength)}</td><td class="num">${esc(e.ticker)}</td>` +
+    return `<tr class="${e.used ? "" : "ghost"}"><td class="num muted">${total - e.id}</td><td class="num" style="white-space:nowrap">${esc(e.time)}</td><td style="white-space:nowrap">${dir}</td><td class="stars">${stars(e.strength)}</td><td class="num">${esc(tkName(e.ticker))}</td>` +
       `<td class="post"><div class="s">${esc(e.summary || "—")}</div><div class="t">${esc(e.text)}${link}</div></td><td>${afterCell(e.after)}</td><td style="white-space:nowrap">${flip}</td><td>${side}</td><td style="white-space:nowrap">${ent}</td><td style="white-space:nowrap">${ex}</td><td>${ret}</td><td>${res}</td></tr>`;
   }).join("");
 }
@@ -470,11 +482,11 @@ function renderNow() {
     const byT = {};
     open.forEach((t) => (byT[t.ticker] = t));
     const list = Object.values(byT);
-    const main = byT[D.benchmark] || list[0];
-    lead = main ? `${sideTxt(main.side)} <span class="num">${esc(main.ticker)}</span>` : `<span class="muted">空手</span>`;
+    const main = byT[state.market] || list[0];
+    lead = main ? `${sideTxt(main.side)} <span class="num">${esc(tkName(main.ticker))}</span>` : `<span class="muted">空手</span>`;
     list.forEach((t) => {
       const since = t.status === "pending" ? "待今天收盤進場" : `${t.entryDate} 以 <span class="num">${t.entryPx.toFixed(2)}</span> 進場，目前 <span class="num ${sgn(t.ret)}">${pct(t.ret)}</span>`;
-      detail.push(`<span><b>${esc(t.ticker)} ${t.side > 0 ? "做多" : "做空"}</b>：她在 ${esc(t.ev.time)}「${esc(t.ev.summary)}」翻${t.ev.dir === "bull" ? "多" : "空"}，${since}</span>`);
+      detail.push(`<span><b>${esc(tkName(t.ticker))} ${t.side > 0 ? "做多" : "做空"}</b>：她在 ${esc(t.ev.time)}「${esc(t.ev.summary)}」翻${t.ev.dir === "bull" ? "多" : "空"}，${since}</span>`);
     });
   } else {
     const L = open.filter((t) => t.side > 0).length, S = open.length - L;
@@ -486,7 +498,9 @@ function renderNow() {
 }
 
 function render() {
-  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === state.mode)));
+  document.querySelectorAll(".seg button[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === state.mode)));
+  document.querySelectorAll(".seg button[data-mkt]").forEach((b) => { b.hidden = !D.prices[b.dataset.mkt]; b.setAttribute("aria-pressed", String(b.dataset.mkt === state.market)); });
+  document.querySelectorAll(".benchName").forEach((el) => (el.textContent = tkName(state.market)));
   $("#minStr").value = String(state.minStr);
   $("#modeNote").innerHTML = state.mode === "B"
     ? `<b>Mode B（翻轉平倉）</b>：每次 8zz 方向翻轉就反向進場，持有到同一標的下一次反向訊號才出場。同向貼文不加碼。`
@@ -498,7 +512,8 @@ function render() {
   renderTable();
 }
 
-document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => { state.mode = b.dataset.mode; save(); render(); }));
+document.querySelectorAll(".seg button[data-mode]").forEach((b) => b.addEventListener("click", () => { state.mode = b.dataset.mode; save(); render(); }));
+document.querySelectorAll(".seg button[data-mkt]").forEach((b) => b.addEventListener("click", () => { state.market = b.dataset.mkt; save(); render(); }));
 $("#minStr").addEventListener("change", (e) => { state.minStr = +e.target.value; save(); render(); });
 ["#fDir", "#fStr", "#fRes", "#fScope"].forEach((s) => $(s).addEventListener("change", renderTable));
 $("#q").addEventListener("input", renderTable);

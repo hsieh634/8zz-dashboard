@@ -17,6 +17,7 @@ import datetime as dt
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -192,6 +193,19 @@ def append_rows(path, rows, fields):
         w.writerows(rows)
 
 
+STATUS = ROOT / "data" / "fetch_status.json"
+
+
+def write_status(ok, message):
+    """把這次抓文結果記下來，看板會顯示；失敗時一眼就看得到。"""
+    STATUS.parent.mkdir(exist_ok=True)
+    old = json.loads(STATUS.read_text(encoding="utf-8")) if STATUS.exists() else {}
+    now = dt.datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+    new = {"ok": ok, "message": message, "checked_at": now,
+           "last_ok_at": now if ok else old.get("last_ok_at")}
+    STATUS.write_text(json.dumps(new, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--since", help="只抓這個時間之後的貼文（YYYY-MM-DD 或 Apify 相對時間如 '2 days'）")
@@ -214,9 +228,20 @@ def main():
         since = f"{hours} hours"
     else:
         since = "3 days"
-    posts = [p for p in fetch_posts(token, since, args.limit) if p["id"] not in seen]
+    try:
+        fetched = fetch_posts(token, since, args.limit)
+    except urllib.error.HTTPError as exc:
+        reason = {401: "Apify 權杖失效，請到 GitHub Secrets 更新 APIFY_TOKEN",
+                  402: "Apify 額度用完了", 403: "Apify 額度用完或帳號被限制"}.get(exc.code, f"Apify 錯誤 HTTP {exc.code}")
+        print(f"::warning::抓文失敗：{reason}")
+        if not args.dry_run:
+            write_status(False, reason)
+        return
+    posts = [p for p in fetched if p["id"] not in seen]
     print(f"抓到 {len(posts)} 篇新貼文（since={since}）")
     if not posts:
+        if not args.dry_run:
+            write_status(True, "沒有新貼文")
         return
 
     client = None
@@ -253,6 +278,7 @@ def main():
     state["seen"] = sorted(seen | {p["id"] for p in posts})[-2000:]
     state["last_time"] = max([state["last_time"] or ""] + [p["time"] for p in posts])
     STATE.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
+    write_status(True, f"新增 {len(events)} 筆事件")
     print(f"寫入 {len(events)} 筆事件、{len(pending)} 筆待判讀")
 
 
