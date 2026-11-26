@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy_try.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -58,5 +58,14 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
+      - id: deploy_try
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      # GitHub 偶爾剛上傳完還查不到檔案，等一下再部署一次
+      - if: steps.deploy_try.outcome == 'failure'
+        run: sleep 45
+
       - id: deploy
+        if: steps.deploy_try.outcome == 'failure'
         uses: actions/deploy-pages@v5
