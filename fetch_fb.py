@@ -226,6 +226,8 @@ def main():
         last = dt.datetime.strptime(state["last_time"], "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
         hours = max(2, int((dt.datetime.now(TZ) - last).total_seconds() // 3600) + 1)
         since = f"{hours} hours"
+        # 停擺過一段時間（例如權杖失效）就自動放寬篇數上限，把漏掉的補回來；她平均約每 4 小時一篇
+        args.limit = max(args.limit, min(200, hours // 4))
     else:
         since = "3 days"
     try:
