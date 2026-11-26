@@ -1,6 +1,6 @@
 {
  "ok": false,
  "message": "Apify 權杖失效，請到 GitHub Secrets 更新 APIFY_TOKEN",
- "checked_at": "2026-11-26 08:53",
+ "checked_at": "2026-11-26 08:56",
  "last_ok_at": null
 }
